@@ -6,17 +6,25 @@ import connectDB from "./config/databaseConnection.js";
 import cookieParser from "cookie-parser";
 import { parse } from "cookie";
 import jwt from "jsonwebtoken";
+import cors from "cors";
 import { newChat } from "./lib/createChat.js";
 
-dotenv.config({ path: "config/config.env" });
+dotenv.config({ path: "./config.env" });
 connectDB();
 
 const app = express();
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true,
+  })
+);
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
     origin: "http://localhost:3000",
     methods: ["GET", "POST"],
+    credentials: true,
   },
 });
 
@@ -40,89 +48,82 @@ io.use((socket, next) => {
     };
     next();
   } catch (error) {
-    console.log(error.message)
-    next(new Error('Unauthorized'));
+    console.log(error.message);
+    next(new Error("Unauthorized"));
   }
 });
 
 io.on("connection", (socket) => {
-  userMap.set(socket.user.id, socket.id);
+  userMap.set(socket.user.id, {
+    socketId: socket.id,
+    username: socket.user.username,
+  });
 
-  console.log(`User ${socket.user.username} connected`);
 
   socket.on("joinRoom", (groupId) => {
     socket.join(groupId);
     userRooms.set(socket.user.id, groupId);
-    console.log(`User ${socket.user.username} joined room ${groupId}`);
+    console.log("joined room", groupId);
   });
 
   socket.on("leaveRoom", (groupId) => {
     socket.leave(groupId);
     userRooms.delete(socket.user.id);
-    console.log(`User ${socket.user.username} left room ${groupId}`);
   });
 
   socket.on("newMessage", async (data) => {
+    console.log(data)
     const now = Date.now();
     const userId = socket.user.id;
-
-    // Check rate limit
     if (rateLimit.has(userId) && now - rateLimit.get(userId) < 5000) {
-      socket.emit("error", { message: "You are sending messages too quickly. Please wait." });
+      socket.emit("error", {
+        message: "You are sending messages too quickly. Please wait.",
+      });
       return;
     }
-
-    // Update rate limit timestamp
     rateLimit.set(userId, now);
 
     try {
       const { receiverId, message, isGroup, groupId } = data;
       let reaTimeMessage;
-      let dbMessage;
+      
+      let dbMessage = {
+        sender: socket.user.id,
+        message,
+        ...(isGroup ? { group: groupId } : { receiver: receiverId }),
+        isGroup: false,
+        createdAt: Date.now(),
+      };
+        if (isGroup) {
+          console.log(isGroup)
+          reaTimeMessage = {
+            sender: socket.user.username,
+            message,
+            isGroup: true,
+            createdAt: Date.now(),
+          };
+          io.to(userRooms.get(socket.user.id)).emit("receiveMessage", reaTimeMessage);
+        } else {
+          reaTimeMessage = {
+            sender: {
+              username: socket.user.username,
+              _id: socket.user.id,
+            },
+            receiver: {
+              username: userMap.get(receiverId).username,
+              _id: receiverId,
+            },
+            message,
+            isGroup: false,
+            createdAt: new Date(Date.now()),
+          };
 
-      if (isGroup) {
-        dbMessage = {
-          sender: socket.user.username,
-          message,
-          group: groupId,
-          isGroup: true,
-          createdAt: Date.now(),
-        };
-        reaTimeMessage = {
-          sender: socket.user.username,
-          message,
-          isGroup: true,
-          createdAt: Date.now(),
-        };
-
-        socket.to(groupId).emit("receiveMessage", reaTimeMessage);
-      } else {
-        dbMessage = {
-          sender: socket.user.username,
-          message,
-          receiver: receiverId,
-          isGroup: false,
-          createdAt: Date.now(),
-        };
-
-        reaTimeMessage = {
-          sender: {
-            username: socket.user.username,
-            _id: socket.user.id,
-          },
-          receiver: {
-            username: receiverId,
-            _id: receiverId,
-          },
-          message,
-          isGroup: false,
-          createdAt: Date.now(),
-        };
-
-        socket.to(userMap.get(receiverId)).emit("receiveMessage", reaTimeMessage);
-      }
-
-     await newChat(dbMessage);
+          socket
+            .to(userMap.get(receiverId).socketId)
+            .emit("receiveMessage", reaTimeMessage);
+        }
+      
+      // await newChat(dbMessage);
     } catch (error) {
       console.error("Error processing message:", error.message);
       socket.emit("error", { message: "Failed to process message" });
