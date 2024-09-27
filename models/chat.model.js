@@ -13,6 +13,23 @@ const chatSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
   },
+  media: {
+    url: {
+      type: String,
+      
+    },
+    public_id: {
+      type: String,
+      
+    },
+  },
+  type: {
+    type: String,
+    default: "text",
+    required: true,
+
+  },
+
   isDeleted: [
     {
       type: mongoose.Schema.Types.ObjectId,
@@ -33,6 +50,6 @@ const chatSchema = new mongoose.Schema({
   },
 });
 
-const Chat = new mongoose.model("Chat", chatSchema);
+const Chat = mongoose.models.Chat || mongoose.model("Chat", chatSchema);
 
 export default Chat;
