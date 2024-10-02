@@ -45,7 +45,9 @@ io.use((socket, next) => {
       username: decoded.username,
     };
     next();
+    console.log(decoded);
   } catch (error) {
+    console.log(error);
     next(new Error("Unauthorized"));
   }
 });
