@@ -22,7 +22,7 @@ app.use(
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: process.env.ORIGIN,
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true,
   },
@@ -327,7 +327,9 @@ socket.on("call:request:accept", (data) => {
     userRooms.delete(socket.user.id);
   });
 });
-
+app.get("/", (req, res) => {
+  res.send("Server is running");
+})
 httpServer.listen(process.env.PORT, () => {
   console.log(`Server is running on port ${process.env.PORT}`);
 });
